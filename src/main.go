@@ -16,16 +16,16 @@ func main() {
 	)
 
 	flag.IntVar(&port, "port", 9999, "")
-	flag.IntVar(&defaultTimeout, "defaultTimeout", -1, "to disable the defaultTimeout, enter -1")
-	flag.IntVar(&maxQueuesCount, "max_queues", 5, "")
-	flag.IntVar(&maxQueueSize, "max_messages", 3, "")
+	flag.IntVar(&defaultTimeout, "default_timeout", -1, "to disable the defaultTimeout, enter -1")
+	flag.IntVar(&maxQueuesCount, "max_queues", 0, "")
+	flag.IntVar(&maxQueueSize, "max_queue_size", 0, "")
 	flag.Parse()
 
 	server := http.Server{
 		Addr: fmt.Sprintf("127.0.0.1:%d", port),
 	}
 
-	c := NewController(defaultTimeout, NewQueuesController(maxQueuesCount, maxQueueSize))
+	c := NewController(defaultTimeout, maxQueuesCount, maxQueueSize)
 
 	http.HandleFunc("/queue/", c.Queue)
 

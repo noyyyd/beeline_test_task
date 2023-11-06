@@ -1,8 +1,6 @@
-package main
+package use_cases
 
-import (
-	"context"
-)
+import "context"
 
 type waiter struct {
 	isWait       bool
@@ -18,29 +16,24 @@ func newWaiter() *waiter {
 }
 
 func (w *waiter) wait(ctx context.Context) {
-	if !w.isWait {
-		w.isWait = true
-	}
-
+	w.isWait = true
 	w.waitersCount++
 
-	go func() {
-		select {
-		case <-ctx.Done():
-			if w.isWait {
-				w.stopWait()
-			}
-			return
-		}
-	}()
+	select {
+	case <-ctx.Done():
+	case <-w.waitChan:
+	}
+
+	w.changeWaitStatus()
+}
+
+func (w *waiter) changeWaitStatus() {
+	w.waitersCount--
+	if w.waitersCount == 0 {
+		w.isWait = false
+	}
 }
 
 func (w *waiter) stopWait() {
 	w.waitChan <- struct{}{}
-
-	w.waitersCount--
-
-	if w.waitersCount == 0 {
-		w.isWait = false
-	}
 }

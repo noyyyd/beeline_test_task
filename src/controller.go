@@ -1,6 +1,7 @@
 package main
 
 import (
+	"beeline_test_task/use_cases"
 	"context"
 	"encoding/json"
 	"io"
@@ -12,15 +13,15 @@ import (
 )
 
 type Controller struct {
-	defaultTimeout int
-	queues         *QueuesController
+	defaultTimeout   int
+	queuesController *use_cases.QueueController
 }
 
-func NewController(defaultTimeout int, queues *QueuesController) *Controller {
+func NewController(defaultTimeout, maxQueuesCount, maxQueueSize int) *Controller {
 	return &Controller{
 		defaultTimeout: defaultTimeout,
 
-		queues: queues,
+		queuesController: use_cases.NewQueueController(maxQueuesCount, maxQueueSize),
 	}
 }
 
@@ -35,7 +36,10 @@ func (c *Controller) Queue(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		queueName := strings.TrimLeft(r.URL.Path, "/queue/")
 
-		// добавить заранее проверку на полноту
+		// заранее проверяем полна ли очередь, чтобы не приходилось обрабатывать заранее неуспешлый запрос
+		if c.queuesController.IsFull(queueName) {
+			w.WriteHeader(http.StatusBadRequest)
+		}
 
 		message := new(Message)
 
@@ -52,31 +56,30 @@ func (c *Controller) Queue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if message.Message != nil {
-			if err := c.queues.Push(queueName, *message.Message); err != nil {
-				log.Printf("failed add data in queue %s: %v", queueName, err)
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-		} else {
+		if message.Message == nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		log.Printf("%+v", message)
-
+		if err := c.queuesController.Push(queueName, *message.Message); err != nil {
+			log.Printf("failed add data in queue %s: %v", queueName, err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
 	case http.MethodGet:
 		queueName := strings.TrimLeft(r.URL.Path, "/queue/")
 
 		ctx, cancel, err := c.createContext(r)
-		defer cancel()
+		defer func() {
+			cancel()
+		}()
 		if err != nil {
 			log.Printf("failed create context: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		data, err := c.queues.Pop(ctx, queueName)
+		data, err := c.queuesController.Pop(ctx, queueName)
 		if err != nil {
 			log.Printf("failed get data from queue %s: %v", queueName, err)
 			w.WriteHeader(http.StatusNotFound)
@@ -110,7 +113,7 @@ func (c *Controller) Queue(w http.ResponseWriter, r *http.Request) {
 func (c *Controller) createContext(r *http.Request) (context.Context, context.CancelFunc, error) {
 	timeout := c.defaultTimeout
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(r.Context())
 
 	timeoutStr := r.URL.Query().Get("timeout")
 	if timeoutStr != "" {
